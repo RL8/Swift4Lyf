@@ -44,6 +44,18 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Windsurf specific
+# Firebase SDK related
+google-services.json
+GoogleService-Info.plist
+firebase-debug.log
+.firebase/
+firebase.js
+firebase-config.js
+
+# Environment files
 .windsurf/secrets/
 *.env
+.env*
+env.dart
+
+# Windsurf specific

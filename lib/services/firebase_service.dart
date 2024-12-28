@@ -22,32 +22,54 @@ class FirebaseConfig {
         'FIREBASE_DATABASE_URL',
         defaultValue: '',
       );
-
-  static Map<String, dynamic> get firebaseConfig => {
-        'apiKey': apiKey,
-        'authDomain': authDomain,
-        'projectId': projectId,
-        'databaseURL': databaseUrl,
-      };
+  
+  static String get storageBucket => const String.fromEnvironment(
+        'FIREBASE_STORAGE_BUCKET',
+        defaultValue: '',
+      );
 }
 
 class FirebaseService {
-  final String baseUrl;
-  
-  FirebaseService() : baseUrl = FirebaseConfig.databaseUrl;
-  
-  Future<Map<String, dynamic>> get(String path) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/$path.json?key=${FirebaseConfig.apiKey}'),
-    );
-    return json.decode(response.body);
+  static final FirebaseService _instance = FirebaseService._internal();
+  bool _initialized = false;
+
+  factory FirebaseService() {
+    return _instance;
   }
-  
-  Future<Map<String, dynamic>> post(String path, Map<String, dynamic> data) async {
+
+  FirebaseService._internal();
+
+  Future<void> initializeFirebase() async {
+    if (_initialized) return;
+    
+    // Validate required configuration
+    assert(FirebaseConfig.apiKey.isNotEmpty, 'FIREBASE_API_KEY is required');
+    assert(FirebaseConfig.projectId.isNotEmpty, 'FIREBASE_PROJECT_ID is required');
+    assert(FirebaseConfig.databaseUrl.isNotEmpty, 'FIREBASE_DATABASE_URL is required');
+    
+    _initialized = true;
+  }
+
+  Future<dynamic> get(String path) async {
+    final response = await http.get(
+      Uri.parse('${FirebaseConfig.databaseUrl}/$path.json'),
+    );
+    
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    }
+    throw Exception('Failed to load data');
+  }
+
+  Future<dynamic> post(String path, Map<String, dynamic> data) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/$path.json?key=${FirebaseConfig.apiKey}'),
+      Uri.parse('${FirebaseConfig.databaseUrl}/$path.json'),
       body: json.encode(data),
     );
-    return json.decode(response.body);
+    
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    }
+    throw Exception('Failed to save data');
   }
 }
