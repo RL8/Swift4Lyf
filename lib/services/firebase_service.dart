@@ -51,25 +51,63 @@ class FirebaseService {
   }
 
   Future<dynamic> get(String path) async {
-    final response = await http.get(
-      Uri.parse('${FirebaseConfig.databaseUrl}/$path.json'),
-    );
-    
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
+    if (!_initialized) {
+      await initializeFirebase();
     }
-    throw Exception('Failed to load data');
+
+    final url = Uri.parse('${FirebaseConfig.databaseUrl}/$path.json?key=${FirebaseConfig.apiKey}');
+    
+    try {
+      final response = await http.get(url);
+      
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        debugPrint('Firebase authentication failed. Status: ${response.statusCode}');
+        debugPrint('Response: ${response.body}');
+        throw Exception('Authentication failed. Please check your Firebase API key.');
+      }
+      
+      debugPrint('Firebase request failed. Status: ${response.statusCode}');
+      debugPrint('Response: ${response.body}');
+      throw Exception('Failed to load data');
+    } catch (e) {
+      debugPrint('Firebase error: $e');
+      rethrow;
+    }
   }
 
   Future<dynamic> post(String path, Map<String, dynamic> data) async {
-    final response = await http.post(
-      Uri.parse('${FirebaseConfig.databaseUrl}/$path.json'),
-      body: json.encode(data),
-    );
-    
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
+    if (!_initialized) {
+      await initializeFirebase();
     }
-    throw Exception('Failed to save data');
+
+    final url = Uri.parse('${FirebaseConfig.databaseUrl}/$path.json?key=${FirebaseConfig.apiKey}');
+    
+    try {
+      final response = await http.post(
+        url,
+        body: json.encode(data),
+      );
+      
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        debugPrint('Firebase authentication failed. Status: ${response.statusCode}');
+        debugPrint('Response: ${response.body}');
+        throw Exception('Authentication failed. Please check your Firebase API key.');
+      }
+      
+      debugPrint('Firebase request failed. Status: ${response.statusCode}');
+      debugPrint('Response: ${response.body}');
+      throw Exception('Failed to save data');
+    } catch (e) {
+      debugPrint('Firebase error: $e');
+      rethrow;
+    }
   }
 }

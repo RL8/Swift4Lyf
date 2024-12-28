@@ -1,10 +1,15 @@
+// Swift4Lyf Album Ranking Screen
+// Version: 1.1.0 - Enhanced drag & drop, drawer behavior
+// Last Updated: 2024-12-28
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../domain/models/album.dart';
 
 class GestureHorizontalScreen extends StatefulWidget {
   const GestureHorizontalScreen({super.key});
 
-  static const String version = 'v28 Dec 06:50';
+  static const String version = 'v28 Dec 09:10';
 
   @override
   State<GestureHorizontalScreen> createState() => _GestureHorizontalScreenState();
@@ -81,19 +86,24 @@ class _GestureHorizontalScreenState extends State<GestureHorizontalScreen> with 
 
   void _handleUnrankAlbum(Album album) {
     setState(() {
-      rankedAlbums.remove(album);
-      // Find correct position by release sequence
-      final insertIndex = unrankedAlbums.indexWhere(
-        (a) => a.releaseSequence > album.releaseSequence,
-      );
-      if (insertIndex == -1) {
-        unrankedAlbums.add(album);
-      } else {
-        unrankedAlbums.insert(insertIndex, album);
+      if (rankedAlbums.contains(album)) {
+        rankedAlbums.remove(album);
+        _updateRanks();
+        
+        // Find correct position by release sequence
+        if (!unrankedAlbums.contains(album)) {
+          final insertIndex = unrankedAlbums.indexWhere(
+            (a) => a.releaseSequence > album.releaseSequence,
+          );
+          if (insertIndex == -1) {
+            unrankedAlbums.add(album);
+          } else {
+            unrankedAlbums.insert(insertIndex, album);
+          }
+        }
+        
+        hasUnsavedChanges = true;
       }
-      album.rank = null;
-      _updateRanks();
-      hasUnsavedChanges = true;
     });
   }
 
@@ -109,36 +119,102 @@ class _GestureHorizontalScreenState extends State<GestureHorizontalScreen> with 
   }
 
   Widget _buildRankedAlbum(Album album, int index) {
-    return Draggable<Album>(
-      data: album,
-      feedback: Material(
-        elevation: 8.0,
-        borderRadius: BorderRadius.circular(8),
-        child: SizedBox(
-          width: MediaQuery.of(context).size.width * 0.9,
-          child: _buildAlbumTile(album, true, isDragging: true),
-        ),
-      ),
-      childWhenDragging: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-        height: 72,
-        decoration: BoxDecoration(
-          color: Colors.grey.withOpacity(0.1),
+    return ReorderableDragStartListener(
+      key: ValueKey(album.id),
+      index: index,
+      child: LongPressDraggable<Album>(
+        data: album,
+        delay: const Duration(milliseconds: 150),
+        feedback: Material(
+          elevation: 4.0,
           borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: MediaQuery.of(context).size.width * 0.9,
+            child: ListTile(
+              leading: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    backgroundColor: album.color,
+                    child: Text(
+                      '${album.rank}',
+                      style: TextStyle(
+                        color: album.color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildAlbumArt(album),
+                ],
+              ),
+              title: Text(album.name),
+              subtitle: Text('${album.releaseYear}'),
+              tileColor: album.color.withOpacity(0.1),
+            ),
+          ),
         ),
+        childWhenDragging: Container(
+          decoration: BoxDecoration(
+            color: Colors.grey.withOpacity(0.1),
+            border: Border.all(
+              color: Colors.grey.withOpacity(0.2),
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ListTile(
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  backgroundColor: Colors.grey.withOpacity(0.3),
+                  child: Text('${album.rank}', style: TextStyle(color: Colors.grey)),
+                ),
+                const SizedBox(width: 8),
+                _buildAlbumArt(album),
+              ],
+            ),
+            title: Text(album.name, style: TextStyle(color: Colors.grey)),
+            subtitle: Text('${album.releaseYear}', style: TextStyle(color: Colors.grey)),
+          ),
+        ),
+        child: Card(
+          elevation: 1,
+          child: ListTile(
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  backgroundColor: album.color,
+                  child: Text(
+                    '${album.rank}',
+                    style: TextStyle(
+                      color: album.color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _buildAlbumArt(album),
+              ],
+            ),
+            title: Text(album.name),
+            subtitle: Text('${album.releaseYear}'),
+            tileColor: album.color.withOpacity(0.1),
+          ),
+        ),
+        onDragStarted: () {
+          HapticFeedback.vibrate();
+        },
+        onDragEnd: (details) {
+          // Check if the drag ended in the unranked section (bottom 25% of screen)
+          final screenHeight = MediaQuery.of(context).size.height;
+          final unrankedSectionTop = screenHeight * 0.75;
+          if (details.offset.dy > unrankedSectionTop) {
+            _handleUnrankAlbum(album);
+            HapticFeedback.vibrate();
+          }
+        },
       ),
-      onDragStarted: () {
-        setState(() {
-          draggedAlbum = album;
-        });
-      },
-      onDragEnd: (details) {
-        setState(() {
-          draggedAlbum = null;
-          isDraggingToUnrank = false;
-        });
-      },
-      child: _buildAlbumTile(album, true),
     );
   }
 
@@ -295,10 +371,42 @@ class _GestureHorizontalScreenState extends State<GestureHorizontalScreen> with 
     return tile;
   }
 
+  Widget _buildAlbumArt(Album album) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Image.network(
+        album.imageUrl,
+        width: 56,
+        height: 56,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            width: 56,
+            height: 56,
+            color: Colors.grey.shade200,
+            child: Icon(Icons.album, color: Colors.grey.shade400),
+          );
+        },
+      ),
+    );
+  }
+
+  void _handleReorder(int oldIndex, int newIndex) {
+    setState(() {
+      if (oldIndex < newIndex) {
+        newIndex -= 1;
+      }
+      final album = rankedAlbums.removeAt(oldIndex);
+      rankedAlbums.insert(newIndex, album);
+      _updateRanks();
+      hasUnsavedChanges = true;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
-    final unrankedMaxHeight = 280.0;
+    final unrankedHeight = screenHeight * 0.25;
 
     return Scaffold(
       appBar: AppBar(
@@ -314,6 +422,7 @@ class _GestureHorizontalScreenState extends State<GestureHorizontalScreen> with 
           ],
         ),
         actions: [
+          // Reset button
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
@@ -343,6 +452,7 @@ class _GestureHorizontalScreenState extends State<GestureHorizontalScreen> with 
               }
             },
           ),
+          // Save button
           IconButton(
             icon: Icon(
               Icons.save,
@@ -352,151 +462,188 @@ class _GestureHorizontalScreenState extends State<GestureHorizontalScreen> with 
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          // Ranked Section
-          SizedBox(
-            height: screenHeight - unrankedMaxHeight - kToolbarHeight - MediaQuery.of(context).padding.top,
+          // Ranked Albums Section (Full Screen)
+          Positioned.fill(
             child: DragTarget<Album>(
-              onWillAcceptWithDetails: (details) {
-                final album = details.data;
-                return album != null && !rankedAlbums.contains(album);
-              },
-              onAcceptWithDetails: (details) {
-                if (details.data != null) {
-                  _handleRankAlbum(details.data, null);
-                }
-              },
+              onAccept: (album) => _handleRankAlbum(album, null),
+              onWillAccept: (album) => album != null && !rankedAlbums.contains(album),
               builder: (context, candidateData, rejectedData) {
                 return Container(
                   color: candidateData.isNotEmpty
                       ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
-                      : null,
+                      : Colors.transparent,
                   child: rankedAlbums.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Drag albums here to rank them!',
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 16,
-                            ),
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.arrow_downward,
+                                color: Colors.grey,
+                                size: 32,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Drag albums here to rank them!',
+                                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                      color: Colors.grey,
+                                    ),
+                              ),
+                            ],
                           ),
                         )
                       : ReorderableListView.builder(
                           itemCount: rankedAlbums.length,
                           itemBuilder: (context, index) {
-                            return KeyedSubtree(
-                              key: ValueKey(rankedAlbums[index].id),
-                              child: _buildRankedAlbum(rankedAlbums[index], index),
-                            );
+                            return _buildRankedAlbum(rankedAlbums[index], index);
                           },
-                          onReorder: (oldIndex, newIndex) {
-                            setState(() {
-                              if (oldIndex < newIndex) {
-                                newIndex -= 1;
-                              }
-                              final album = rankedAlbums.removeAt(oldIndex);
-                              rankedAlbums.insert(newIndex, album);
-                              _updateRanks();
-                              hasUnsavedChanges = true;
-                            });
-                          },
+                          onReorder: _handleReorder,
+                          padding: EdgeInsets.only(
+                            top: 8.0,
+                            left: 8.0,
+                            right: 8.0,
+                            bottom: isUnrankedExpanded ? unrankedHeight : 80.0, // Space for collapsed indicator
+                          ),
                         ),
                 );
               },
             ),
           ),
-
-          // Unranked section header
-          InkWell(
-            onTap: _toggleUnrankedSection,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+          // Unranked Counter (always visible)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: isUnrankedExpanded ? unrankedHeight + 16 : 16,
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  isUnrankedExpanded = !isUnrankedExpanded;
+                });
+              },
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.album,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${unrankedAlbums.length} Unranked',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                    ),
+                    const SizedBox(width: 8),
+                    AnimatedRotation(
+                      duration: const Duration(milliseconds: 300),
+                      turns: isUnrankedExpanded ? 0.5 : 0,
+                      child: Icon(
+                        Icons.keyboard_arrow_up,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Unranked Albums Drawer
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: isUnrankedExpanded ? 0 : -unrankedHeight,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              height: unrankedHeight,
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                color: Theme.of(context).scaffoldBackgroundColor,
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.1),
                     blurRadius: 8,
-                    offset: const Offset(0, -4),
+                    offset: const Offset(0, -2),
                   ),
                 ],
               ),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'UNRANKED (${unrankedAlbums.length})',
-                    style: Theme.of(context).textTheme.titleSmall,
+                  // Drawer Handle
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        isUnrankedExpanded = !isUnrankedExpanded;
+                      });
+                    },
+                    child: Container(
+                      height: 24,
+                      color: Colors.transparent,
+                      child: Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  const Spacer(),
-                  AnimatedRotation(
-                    duration: const Duration(milliseconds: 300),
-                    turns: isUnrankedExpanded ? 0.5 : 0,
-                    child: const Icon(Icons.keyboard_arrow_up),
+                  // Unranked Albums
+                  Expanded(
+                    child: DragTarget<Album>(
+                      onAccept: _handleUnrankAlbum,
+                      onWillAccept: (album) => album != null && !unrankedAlbums.contains(album),
+                      builder: (context, candidateData, rejectedData) {
+                        return Container(
+                          color: candidateData.isNotEmpty
+                              ? Theme.of(context).colorScheme.secondary.withOpacity(0.1)
+                              : Colors.transparent,
+                          child: ShaderMask(
+                            shaderCallback: (Rect bounds) {
+                              return LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: [Colors.white, Colors.white, Colors.white, Colors.white.withOpacity(0)],
+                                stops: [0.0, 0.8, 0.9, 1.0],
+                              ).createShader(bounds);
+                            },
+                            blendMode: BlendMode.dstIn,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: [
+                                  ...unrankedAlbums.map((album) => Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: _buildUnrankedAlbum(album),
+                                      )),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ],
-              ),
-            ),
-          ),
-
-          // Drop zone for unranking
-          DragTarget<Album>(
-            onWillAcceptWithDetails: (details) {
-              final album = details.data;
-              final isValid = album != null && rankedAlbums.contains(album);
-              if (isValid) {
-                setState(() {
-                  isDraggingToUnrank = true;
-                });
-              }
-              return isValid;
-            },
-            onAcceptWithDetails: (details) {
-              final album = details.data;
-              if (album != null) {
-                _handleUnrankAlbum(album);
-              }
-            },
-            onLeave: (album) {
-              setState(() {
-                isDraggingToUnrank = false;
-              });
-            },
-            builder: (context, candidateData, rejectedData) {
-              return Container(
-                height: 20,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      if (candidateData.isNotEmpty || draggedAlbum != null)
-                        Theme.of(context).colorScheme.error.withOpacity(0.2)
-                      else
-                        Colors.transparent,
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // Unranked Section
-          SizeTransition(
-            sizeFactor: _expandAnimation,
-            child: Container(
-              height: unrankedMaxHeight - 36, // Account for header height
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-              ),
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                children: unrankedAlbums
-                    .map((album) => _buildUnrankedAlbum(album))
-                    .toList(),
               ),
             ),
           ),
